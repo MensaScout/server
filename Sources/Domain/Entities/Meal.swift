@@ -11,6 +11,5 @@ struct Meal {
     let id: UUID
     let name: String
     let description: String?
-    let weekday: Weekday
     let price: Price
 }
