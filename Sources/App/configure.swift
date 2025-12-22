@@ -7,6 +7,7 @@ public func configure(_ app: Application) async throws {
 
     // register routes
     try routes(app)
+    weeklyMenuRoutes(app)
 
     app.middleware.use(RouteLoggingMiddleware(logLevel: .debug))
 }
