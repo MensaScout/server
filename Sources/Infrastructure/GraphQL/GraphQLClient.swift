@@ -23,6 +23,8 @@ extension GraphQLClient {
         variables: [GraphQLVariable],
         responseType: Response.Type
     ) async throws -> Response {
+        var request = HTTPRequest(url: baseURL)
+        
         let encodedVariables: [String: String]? = if variables.isEmpty {
             nil
         } else {
@@ -32,25 +34,22 @@ extension GraphQLClient {
                 }
             )
         }
-        
-        let body = try JSONEncoder().encode(
-            GraphQLBody(
+        request.body = GraphQLBody(
                 query: query,
                 variables: encodedVariables
             )
-        )
         
         // Add headers
-        var headers = HTTPHeaders()
-        headers.add(name: .contentType, value: "application/json")
-        
-        authentication?.apply(to: &headers)
+        request.headers.add(name: .contentType, value: "application/json")
+        authentication?.apply(to: &request.headers)
         
         // Execute request
         let response: ClientResponse
         do {
-            response = try await httpClient.post(baseURL, headers: headers) {
-                $0.body = .init(data: body)
+            response = try await httpClient.post(request.url, headers: request.headers) {
+                $0.body = .init(
+                    data: try JSONEncoder().encode(request.body)
+                )
             }
         } catch {
             throw GraphQLClientError.transport(error)
@@ -86,6 +85,11 @@ extension GraphQLClient {
     }
 }
 
+struct HTTPRequest {
+    let url: URI
+    var headers: HTTPHeaders = HTTPHeaders()
+    var body: GraphQLBody? = nil
+}
 
 struct GraphQLVariable {
     let name: String
