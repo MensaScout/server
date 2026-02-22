@@ -21,6 +21,7 @@ extension GraphQLClient {
     func execute<Response: Decodable>(
         query: String,
         variables: [GraphQLVariable],
+        decoder: JSONDecoder,
         responseType: Response.Type
     ) async throws -> Response {
         let request = buildRequest(query: query, variables: variables)
@@ -62,7 +63,7 @@ extension GraphQLClient {
         // Decode response to provided Decodable
         let decoded: GraphQLResponse<Response>
         do {
-            decoded = try JSONDecoder().decode(
+            decoded = try decoder.decode(
                 GraphQLResponse<Response>.self,
                 from: buffer
             )
