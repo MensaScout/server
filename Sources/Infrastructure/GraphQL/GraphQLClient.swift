@@ -23,8 +23,75 @@ extension GraphQLClient {
         variables: [GraphQLVariable],
         responseType: Response.Type
     ) async throws -> Response {
-        var request = HTTPRequest(url: baseURL)
+        let request = buildRequest(query: query, variables: variables)
         
+        // Create the request context
+        var context = GraphQLExecutionContext(request: request)
+        
+        // Execute request
+        let clock = ContinuousClock()
+        let start = clock.now
+        let response: ClientResponse
+        do {
+            response = try await executeRequest(request: request)
+        } catch {
+            throw GraphQLTransportError(
+                request: context.request,
+                underlyingError: error
+            )
+        }
+        context.response = response
+        context.latency = clock.now - start
+        
+        // Handle HTTP error
+        guard (200..<300).contains(response.status.code) else {
+            throw GraphQLHTTPStatusError(
+                request: context.request,
+                response: context.response,
+                statusCode: Int(response.status.code)
+            )
+        }
+        
+        guard let buffer = response.body else {
+            throw GraphQLEmptyResponseBodyError(
+                request: context.request,
+                response: context.response
+            )
+        }
+        
+        // Decode response to provided Decodable
+        let decoded: GraphQLResponse<Response>
+        do {
+            decoded = try JSONDecoder().decode(
+                GraphQLResponse<Response>.self,
+                from: buffer
+            )
+            dump(decoded)
+        } catch {
+            throw GraphQLDecodingError(
+                request: context.request,
+                response: context.response,
+                underlyingError: error
+            )
+        }
+
+        // Fail if data field of response is nil
+        guard let data = decoded.data else {
+            throw GraphQLResponseError(
+                request: context.request,
+                response: context.response
+            )
+        }
+        
+        return data
+    }
+    
+    func buildRequest(
+        query: String,
+        variables: [GraphQLVariable],
+    ) -> HTTPRequest {
+        var request = HTTPRequest(url: baseURL, headers: HTTPHeaders())
+        // Encode provided variables as dictionary
         let encodedVariables: [String: String]? = if variables.isEmpty {
             nil
         } else {
@@ -43,52 +110,23 @@ extension GraphQLClient {
         request.headers.add(name: .contentType, value: "application/json")
         authentication?.apply(to: &request.headers)
         
-        // Execute request
-        let response: ClientResponse
-        do {
-            response = try await httpClient.post(request.url, headers: request.headers) {
+        return request
+    }
+    
+    func executeRequest(request: HTTPRequest) async throws -> ClientResponse {
+        try await httpClient.post(request.url, headers: request.headers) {
                 $0.body = .init(
                     data: try JSONEncoder().encode(request.body)
                 )
             }
-        } catch {
-            throw GraphQLClientError.transport(error)
-        }
-        
-        // Fail if http code not in valid range
-        guard (200..<300).contains(response.status.code) else {
-            throw GraphQLClientError.httpStatus(Int(response.status.code))
-        }
-        
-        // Fail if response body is nil
-        guard let buffer = response.body else {
-            throw GraphQLClientError.invalidResponse
-        }
-        
-        // Decode response to provided Decodable
-        let decoded = try JSONDecoder().decode(
-            GraphQLResponse<Response>.self,
-            from: buffer
-        )
-        
-        // Fail if response contains errors
-        if let errors = decoded.errors, !errors.isEmpty {
-            throw GraphQLClientError.graphql(errors)
-        }
-        
-        // Fail if data field of response is nil
-        guard let data = decoded.data else {
-            throw GraphQLClientError.invalidResponse
-        }
-        
-        return data
     }
-}
-
+        }
+        
+// Structs used for the request and response itself
 struct HTTPRequest {
     let url: URI
-    var headers: HTTPHeaders = HTTPHeaders()
-    var body: GraphQLBody? = nil
+    var headers: HTTPHeaders
+    var body: GraphQLBody?
 }
 
 struct GraphQLVariable {
@@ -106,6 +144,7 @@ struct GraphQLResponse<T: Decodable>: Decodable {
     let errors: [GraphQLError]?
 }
 
+// Error structs
 struct GraphQLError: Decodable {
     let message: String
     let locations: [Location]?
@@ -117,9 +156,37 @@ struct GraphQLError: Decodable {
     }
 }
 
-enum GraphQLClientError: Error {
-    case transport(any Error)
-    case httpStatus(Int)
-    case graphql([GraphQLError])
-    case invalidResponse
+protocol GraphQLClientError: Error {}
+
+struct GraphQLTransportError: GraphQLClientError {
+    let request: HTTPRequest
+    let underlyingError: any Error
+}
+
+struct GraphQLHTTPStatusError: GraphQLClientError {
+    let request: HTTPRequest
+    let response: ClientResponse
+    let statusCode: Int
+}
+
+struct GraphQLEmptyResponseBodyError: GraphQLClientError {
+    let request: HTTPRequest
+    let response: ClientResponse
+}
+
+struct GraphQLDecodingError: GraphQLClientError {
+    let request: HTTPRequest
+    let response: ClientResponse
+    let underlyingError: any Error
+}
+
+struct GraphQLResponseError: GraphQLClientError {
+    let request: HTTPRequest
+    let response: ClientResponse
+}
+
+struct GraphQLExecutionContext {
+    let request: HTTPRequest
+    var response: ClientResponse!
+    var latency: Duration!
 }
