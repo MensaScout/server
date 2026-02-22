@@ -102,10 +102,10 @@ extension GraphQLClient {
             )
         }
         request.body = GraphQLBody(
-                query: query,
-                variables: encodedVariables
-            )
-        
+            query: query,
+            variables: encodedVariables
+        )
+
         // Add headers
         request.headers.add(name: .contentType, value: "application/json")
         authentication?.apply(to: &request.headers)
@@ -115,13 +115,13 @@ extension GraphQLClient {
     
     func executeRequest(request: HTTPRequest) async throws -> ClientResponse {
         try await httpClient.post(request.url, headers: request.headers) {
-                $0.body = .init(
-                    data: try JSONEncoder().encode(request.body)
-                )
-            }
-    }
+            $0.body = .init(
+                data: try JSONEncoder().encode(request.body)
+            )
         }
-        
+    }
+}
+
 // Structs used for the request and response itself
 struct HTTPRequest {
     let url: URI
@@ -156,35 +156,43 @@ struct GraphQLError: Decodable {
     }
 }
 
+/// Generic class all errors related to the GraphQL client inherit from
 protocol GraphQLClientError: Error {}
 
+/// Error thrown during execution of the request
 struct GraphQLTransportError: GraphQLClientError {
     let request: HTTPRequest
     let underlyingError: any Error
 }
 
+/// Error thrown while reading the response if the HTTP status code is not 200
 struct GraphQLHTTPStatusError: GraphQLClientError {
     let request: HTTPRequest
     let response: ClientResponse
     let statusCode: Int
 }
 
+/// Error thrown while reading the request if the response body is nil
 struct GraphQLEmptyResponseBodyError: GraphQLClientError {
     let request: HTTPRequest
     let response: ClientResponse
 }
 
+/// Error thrown if decoding of the response into GraphQLResponse struct fails
 struct GraphQLDecodingError: GraphQLClientError {
     let request: HTTPRequest
     let response: ClientResponse
     let underlyingError: any Error
 }
 
+/// Error thrown if GraphQL response does not contain data field.
+/// Likely due to a malformed or invalid GraphQL query.
 struct GraphQLResponseError: GraphQLClientError {
     let request: HTTPRequest
     let response: ClientResponse
 }
 
+// Internal execution context
 struct GraphQLExecutionContext {
     let request: HTTPRequest
     var response: ClientResponse!
