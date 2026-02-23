@@ -2,16 +2,16 @@ import Vapor
 
 final class GraphQLClient: @unchecked Sendable {
     private let baseURL: URI
-    private let httpClient: any Client
+    private let transport: any GraphQLTransport
     private let authentication: (any APIAuthentication)?
 
     init(
         baseURL: URI,
-        httpClient: any Client,
+        transport: any GraphQLTransport,
         authentication: (any APIAuthentication)? = nil
     ) {
         self.baseURL = baseURL
-        self.httpClient = httpClient
+        self.transport = transport
         self.authentication = authentication
     }
 }
@@ -34,7 +34,7 @@ extension GraphQLClient {
         let start = clock.now
         let response: ClientResponse
         do {
-            response = try await executeRequest(request: request)
+            response = try await transport.execute(request)
         } catch {
             throw GraphQLTransportError(
                 request: context.request,
@@ -120,14 +120,6 @@ extension GraphQLClient {
         authentication?.apply(to: &request.headers)
         
         return request
-    }
-    
-    func executeRequest(request: HTTPRequest) async throws -> ClientResponse {
-        try await httpClient.post(request.url, headers: request.headers) {
-            $0.body = .init(
-                data: try JSONEncoder().encode(request.body)
-            )
-        }
     }
 }
 
