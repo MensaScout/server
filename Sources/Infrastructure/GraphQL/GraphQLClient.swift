@@ -76,7 +76,15 @@ extension GraphQLClient {
             )
         }
 
-        // Fail if data field of response is nil
+        // Fail if GraphQL response contains errors or no data is returned
+        if let errors = decoded.errors, !errors.isEmpty {
+            throw GraphQLExecutionError(
+                request: context.request,
+                response: context.response,
+                responseError: errors
+            )
+        }
+        
         guard let data = decoded.data else {
             throw GraphQLResponseError(
                 request: context.request,
@@ -186,11 +194,17 @@ struct GraphQLDecodingError: GraphQLClientError {
     let underlyingError: any Error
 }
 
-/// Error thrown if GraphQL response does not contain data field.
-/// Likely due to a malformed or invalid GraphQL query.
+/// Error thrown if GraphQL response does not contain data field
 struct GraphQLResponseError: GraphQLClientError {
     let request: HTTPRequest
     let response: ClientResponse
+}
+
+/// Error thrown if GraphQL response contains errors
+struct GraphQLExecutionError: GraphQLClientError {
+    let request: HTTPRequest
+    let response: ClientResponse
+    let responseError: [GraphQLError]
 }
 
 // Internal execution context
